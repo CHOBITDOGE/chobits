@@ -1,10 +1,5 @@
 import React, { useState, useEffect, useRef, Component, ErrorInfo, useCallback } from 'react';
-import { 
-  Mic, MicOff, Send, Settings, Download, Upload, Trash2, 
-  Brain, Calendar, PlayCircle, StopCircle, Star, Zap, 
-  User, Shield, LogOut, Plus, Edit2, Check, X, Server, Cpu, Layers, Lock,
-  Image as ImageIcon, Moon, Sun, Terminal, Database, FileText, Link as LinkIcon, Palette, Globe, AtSign, Search, Wifi, AlertCircle, CheckCircle, Loader2, Save, XCircle, FileWarning, RefreshCw, Folder, FolderOpen, ChevronRight, ChevronDown, Home, ArrowRight, Eye, MoreHorizontal, CornerDownRight, Info, File, MessageSquarePlus, ArrowLeft, Move, Bot, Volume2, VolumeX, Lightbulb, LogIn, Menu, RefreshCcw, Map, Activity, ChevronUp, Anchor, ChevronLeft, ListOrdered
-} from 'lucide-react';
+import { Mic, Send, Settings, Download, Upload, Trash2, Brain, Zap, User, LogOut, Plus, X, Database, FileText, AtSign, AlertCircle, CheckCircle, Loader2, Folder, FolderOpen, ChevronRight, ChevronDown, Home, Eye, ArrowLeft, Move, Bot, Volume2, VolumeX, LogIn, Map, Activity, ChevronUp, Anchor, ChevronLeft, Info, Link } from 'lucide-react';
 
 // --- 0. 错误边界 ---
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
@@ -75,6 +70,7 @@ interface UserProfile { email: string; name: string; isAdmin: boolean; password?
 interface AssistantConfig {
   id: string; name: string; type: 'main'|'sub'; provider: string; apiKey: string; baseUrl?: string; modelName?: string; 
   systemPrompt?: string; linkedFolderIds?: string[]; memoryFolderId?: string; enableSearch?: boolean;
+    linkedResourceIds?: string[];
   connectionStatus?: 'idle' | 'testing' | 'success' | 'error'; lastErrorMessage?: string;
 }
 interface FileNode { id: string; parentId: string | null; title: string; isFolder: boolean; content?: string; type: 'knowledge'|'folder'; updatedAt: number; size: number; }
@@ -89,13 +85,13 @@ interface Message {
     referencedResources?: string[]; 
     groundingMetadata?: any; 
 }
-interface DailyMemory { date: string; summary: string; importance: number; keywords: string[]; }
+// DailyMemory removed (unused)
 interface ToastMsg { id: string; type: 'success' | 'error' | 'info'; content: string; }
 
 // --- 3. 辅助函数 ---
 const generateId = () => Math.random().toString(36).substr(2, 9) + Date.now().toString(36); 
 const getIsoDate = (ts: number) => new Date(ts).toISOString().split('T')[0];
-const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+// formatTime removed (unused)
 const ADMIN_CREDENTIALS = { email: 'shiinamashinro@gmail.com', pass: 'Htjl1171656221', name: '黄涂健隆' };
 
 const readFileContent = (file: File): Promise<string> => {
@@ -106,13 +102,11 @@ const readFileContent = (file: File): Promise<string> => {
         reader.readAsText(file);
     });
 };
-const fileToBase64 = (file: File): Promise<string> => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = e => rej(e); r.readAsDataURL(file); });
+// fileToBase64 removed (unused)
 
 // --- 4. API 调用 ---
 const callLLM = async (ast: AssistantConfig, prompt: string, history: Message[], memContext: string, resContext: string = "", userName: string = "主人"): Promise<{text:string, groundingMetadata?:any}> => {
   if (!ast.apiKey) throw new Error("未配置 API Key");
-  
-  // ✨ Core Prompt V16.24: 注入全量表情指令
   const corePrompt = `
 【系统最高指令】
 你不仅仅是 AI，你是 **${ast.name}** (Chobits 小叽模式)。
@@ -186,69 +180,29 @@ ${memContext ? `【🧠 核心记忆】\n${memContext}` : ""}
       return { text: data.choices?.[0]?.message?.content || "ちぃ...?" };
   }
 };
-const callImagen = async (key: string, prompt: string) => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${key}`;
-    const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1 } }) });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    if (data.predictions?.[0]?.bytesBase64Encoded) return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
-    throw new Error("生成失败");
-};
+// callImagen removed (unused)
 
 // --- UI Components ---
 // ✨ FIX: Draggable Avatar with Full Emotion Mapping
 const DraggableAvatar = ({ emotion = 'standard_smile', onClick, resetTrigger, name = 'Chii' }: { emotion?: string, onClick?: () => void, resetTrigger?: number, name?: string }) => {
-    // ✨ 1. 完整映射表 - 包含所有 27 个表情
+    // ✨ 1. 完整映射表 - 必须与您文件夹里的文件名完全一致
     const emotionMap: Record<string, string> = {
-        // Happy / Smile
-        'standard_smile': 'chii_smile_01.png',
-        'smile': 'chii_smile_01.png',
-        'happy': 'chii_happy_closed_eyes.png',
-        'happy_laugh': 'chii_happy_closed_eyes.png',
-        'gentle': 'chii_gentle_smile.png',
-        'gentle_smile': 'chii_gentle_smile.png',
-        'simple': 'chii_simple_smile.png',
-        'simple_smile': 'chii_simple_smile.png',
-        'slight_smile': 'chii_slight_smile.png',
-        
-        // Shy / Blush
-        'shy': 'chii_shy.png',
-        'blush': 'chii_blush_smile.png',
-        'blush_smile': 'chii_blush_smile.png',
-        'extreme_blush': 'chii_blush_extreme.png',
-        
-        // Sad / Concerned
-        'sad': 'chii_sad.png',
-        'crying': 'chii_crying.png',
-        'concerned': 'chii_concerned.png',
-        'pout': 'chii_pout.png',
-        'sigh': 'chii_sigh.png',
-        
-        // Confused / Shocked / Idle
-        'idle': 'chii_smile_01.png',
-        'thinking': 'chii_sleeping.png',
-        'sleeping': 'chii_sleeping.png',
-        'shocked': 'chii_shocked.png',
-        'curious': 'chii_curious.png',
-        'dazed': 'chii_dazed.png',
-        'dizzy': 'chii_dizzy.png',
-        'blank': 'chii_blank_stare.png',
-        'blank_stare': 'chii_blank_stare.png',
-        'empty': 'chii_empty.png',
-        
-        // Angry / Serious
-        'annoyed': 'chii_annoyed.png',
-        'indifferent': 'chii_indifferent.png',
-        'serious': 'chii_serious.png',
-        'nervous': 'chii_nervous.png',
-        
-        // Action
-        'talking': 'chii_talking.png',
-        'looking_down': 'chii_looking_down.png',
-        'glancing': 'chii_glancing.png'
+        'standard_smile': 'chii_smile_01.png', 'smile': 'chii_smile_01.png', 'happy': 'chii_happy_closed_eyes.png',
+        'happy_laugh': 'chii_happy_closed_eyes.png', 'gentle': 'chii_gentle_smile.png', 'gentle_smile': 'chii_gentle_smile.png',
+        'simple': 'chii_simple_smile.png', 'simple_smile': 'chii_simple_smile.png', 'slight_smile': 'chii_slight_smile.png',
+        'shy': 'chii_shy.png', 'blush': 'chii_blush_smile.png', 'blush_smile': 'chii_blush_smile.png',
+        'extreme_blush': 'chii_blush_extreme.png', 'sad': 'chii_sad.png', 'crying': 'chii_crying.png',
+        'concerned': 'chii_concerned.png', 'pout': 'chii_pout.png', 'sigh': 'chii_sigh.png',
+        'idle': 'chii_smile_01.png', 'thinking': 'chii_sleeping.png', 'sleeping': 'chii_sleeping.png',
+        'shocked': 'chii_shocked.png', 'curious': 'chii_curious.png', 'dazed': 'chii_dazed.png',
+        'dizzy': 'chii_dizzy.png', 'blank': 'chii_blank_stare.png', 'blank_stare': 'chii_blank_stare.png',
+        'empty': 'chii_empty.png', 'annoyed': 'chii_annoyed.png', 'indifferent': 'chii_indifferent.png',
+        'serious': 'chii_serious.png', 'nervous': 'chii_nervous.png', 'talking': 'chii_talking.png',
+        'looking_down': 'chii_looking_down.png', 'glancing': 'chii_glancing.png'
     };
 
-    const fileName = emotionMap[emotion] || 'chii_smile_01.png';
+    const emotionKey = emotion.toLowerCase().replace(/[\{\}]/g, ''); // Clean the key if it has braces
+    const fileName = emotionMap[emotionKey] || 'chii_smile_01.png';
     const localSrc = `/avatars/${fileName}`;
     
     const [offset, setOffset] = useState({ right: 20, bottom: 100 });
@@ -300,7 +254,8 @@ const DraggableAvatar = ({ emotion = 'standard_smile', onClick, resetTrigger, na
 };
 
 const ThinkingCharacter = ({ text }: { text: string }) => ( <div className="flex items-center gap-3 my-4 animate-fade-in pl-2"> <div className="bg-gray-100 text-gray-500 text-sm px-4 py-2 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2 border border-gray-200"> <Loader2 size={16} className="animate-spin text-indigo-500"/> {text} </div> </div> );
-const ChatMessage = ({ msg, speak, isMuted }: { msg: Message, speak: (t:string)=>void, isMuted: boolean }) => {
+
+const ChatMessage = ({ msg, speak }: { msg: Message, speak: (t:string)=>void }) => {
     const [showThought, setShowThought] = useState(false);
     const [avatarError, setAvatarError] = useState(false);
     const renderThoughtChain = (text: string) => {
@@ -322,7 +277,7 @@ const ChatMessage = ({ msg, speak, isMuted }: { msg: Message, speak: (t:string)=
             <div className={`max-w-[85%] md:max-w-[75%] rounded-xl p-3 md:p-4 shadow-sm transition-all ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none ml-auto' : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-700 rounded-bl-none mr-auto'}`}>
                 {msg.thought && ( <div className="mb-3 pb-2 border-b border-gray-100 dark:border-gray-700"> <button onClick={() => setShowThought(!showThought)} className="flex items-center gap-1.5 text-xs font-medium text-indigo-400 hover:text-indigo-600 transition-colors bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-full mb-2"> <Brain size={12} /> {showThought ? "收起思维回路" : "查看 AI 思考过程"} </button> {showThought && ( <div className="animate-fade-in"> {renderThoughtChain(msg.thought)} </div> )} </div> )}
                 <div className={`whitespace-pre-wrap leading-relaxed text-sm md:text-base ${msg.role === 'assistant' ? 'font-medium tracking-wide' : ''}`}>{msg.content}</div>
-                {msg.referencedResources && msg.referencedResources.length > 0 && ( <div className="mt-3 pt-2 border-t border-dashed border-gray-200 dark:border-gray-700 text-[10px] opacity-60 flex items-center gap-1"> <LinkIcon size={10} /> <span>已读取 {msg.referencedResources.length} 份记忆档案</span> </div> )}
+                {msg.referencedResources && msg.referencedResources.length > 0 && ( <div className="mt-3 pt-2 border-t border-dashed border-gray-200 dark:border-gray-700 text-[10px] opacity-60 flex items-center gap-1"> <Link size={10} /> <span>已读取 {msg.referencedResources.length} 份记忆档案</span> </div> )}
                 {msg.role === 'assistant' && ( <div className="mt-2 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity"> <button onClick={() => speak(msg.rawContent || msg.content)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400" title="重播语音"> <Volume2 size={14} /> </button> </div> )}
             </div>
         </div>
@@ -340,8 +295,8 @@ function AppContent() {
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
   const [input, setInput] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const [, setIsSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState(''); 
@@ -353,8 +308,8 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [tempAssistants, setTempAssistants] = useState<AssistantConfig[]>([]);
   const [showResourcePanel, setShowResourcePanel] = useState(false); 
-  const [showMentionModal, setShowMentionModal] = useState(false); 
-  const [mentionSearch, setMentionSearch] = useState('');
+    const [, setShowMentionModal] = useState(false); 
+    const [, setMentionSearch] = useState('');
   const [previewFile, setPreviewFile] = useState<FileNode | null>(null);
   const [editingAssistantId, setEditingAssistantId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null); 
@@ -363,16 +318,15 @@ function AppContent() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [authForm, setAuthForm] = useState({ email: '', pass: '', name: '' });
   const [authError, setAuthError] = useState('');
-  const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode] = useState(false);
   const [avatarResetTrigger, setAvatarResetTrigger] = useState(0);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewPage, setPreviewPage] = useState(1);
   const [isReversePreview, setIsReversePreview] = useState(true);
-  const [attachedImages, setAttachedImages] = useState<string[]>([]); 
+    const [attachedImages] = useState<string[]>([]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
@@ -566,11 +520,7 @@ function AppContent() {
   // [4] Handlers and Logic (Defined after state, before return)
   const handleLogin = (e: React.FormEvent) => { e.preventDefault(); setAuthError(''); const { email, pass, name } = authForm; if (isRegistering) { if (!email || !pass || !name) { setAuthError('请填写完整'); return; } if (email === ADMIN_CREDENTIALS.email) { setAuthError('此邮箱已被系统保留'); return; } if (registeredUsers.find(u => u.email === email)) { setAuthError('该邮箱已被注册'); return; } const newUser: UserProfile = { email, name, isAdmin: false, password: pass }; setRegisteredUsers(prev => [...prev, newUser]); setUser(newUser); setShowLogin(false); } else { if (email === ADMIN_CREDENTIALS.email && pass === ADMIN_CREDENTIALS.pass) { setUser({ ...ADMIN_CREDENTIALS, isAdmin: true }); setShowLogin(false); } else { const found = registeredUsers.find(u => u.email === email && u.password === pass); if (found) { setUser(found); setShowLogin(false); } else { setAuthError('错误'); } } } };
   
-  // ✨ FIX: Defined before use in JSX
   const handleLogout = () => { setUser(null); setIsRegistering(false); addToast('info', "已退出登录"); window.location.reload(); };
-
-  // ✨ FIX: Hoisted renderFileTree
-  const renderFileTree = (parentId: string | null, level: number = 0) => { const nodes = resources.filter(r => r.parentId === parentId).sort((a, b) => (b.isFolder ? 1 : 0) - (a.isFolder ? 1 : 0)); return nodes.map(node => { const isExpanded = expandedFolders.includes(node.id); const isSelected = currentFolderId === node.id; return ( <div key={node.id}> <div className={`flex items-center px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${isSelected && node.isFolder ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600' : ''}`} style={{ paddingLeft: `${level * 16 + 8}px` }} onClick={() => { if (node.isFolder) { setCurrentFolderId(node.id); if (!isExpanded) toggleFolder(node.id); } }}> {node.isFolder && <div onClick={(e) => { e.stopPropagation(); toggleFolder(node.id); }} className="p-1 mr-1 hover:bg-gray-200 rounded">{isExpanded ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}</div>} {node.isFolder ? (isExpanded ? <FolderOpen size={16} className="text-yellow-500 mr-2"/> : <Folder size={16} className="text-yellow-500 mr-2"/>) : <FileText size={16} className="text-blue-400 mr-2"/>} <span className="text-sm truncate flex-1">{node.title}</span> {!node.isFolder && <button onClick={(e) => { e.stopPropagation(); setPreviewFile(node); }} className="p-1 text-gray-400 hover:text-blue-500"><Eye size={14}/></button>} <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14}/></button> </div> {node.isFolder && isExpanded && renderFileTree(node.id, level + 1)} </div> ); }); };
 
   const getFolderFiles = (folderId: string | null): FileNode[] => { const directChildren = resources.filter(r => r.parentId === folderId); let allFiles: FileNode[] = []; for (const child of directChildren) { if (child.isFolder) allFiles = [...allFiles, ...getFolderFiles(child.id)]; else allFiles.push(child); } return allFiles; };
   const toggleFolder = (id: string) => { setExpandedFolders(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]); };
@@ -585,15 +535,16 @@ function AppContent() {
   const handleTestConnection = async (idx: number) => { const ast = tempAssistants[idx]; if (!ast.apiKey) return addToast('error', "请先填写 API Key"); const newTemps = [...tempAssistants]; newTemps[idx].connectionStatus = 'testing'; setTempAssistants(newTemps); try { await callLLM(ast, "Hello", [], "", ""); newTemps[idx].connectionStatus = 'success'; setTempAssistants([...newTemps]); alert(`✅ [${ast.name}] 连接成功！`); } catch (e) { const msg = (e as Error).message; newTemps[idx].connectionStatus = 'error'; newTemps[idx].lastErrorMessage = msg; setTempAssistants([...newTemps]); alert(`❌ 连接失败：\n${msg}`); } };
   const handleExport = async () => { setIsExporting(true); try { const data = await db.exportAll(); const blob = new Blob([JSON.stringify(data)], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `AI_Backup_${getIsoDate(Date.now())}.json`; a.click(); } catch (e) { addToast('error', "导出失败"); } finally { setIsExporting(false); } };
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if(!file) return; const reader = new FileReader(); reader.onload = async (ev) => { try { const data = JSON.parse(ev.target?.result as string); if(!data.assistants) throw new Error("格式错误"); if(confirm(`恢复备份? (覆盖当前数据)`)) { await db.importAll(data); addToast('success', "恢复成功"); window.location.reload(); } } catch(err) { addToast('error', "文件解析失败"); } }; reader.readAsText(file); };
-  
+  const renderFileTree = (parentId: string | null, level: number = 0) => { const nodes = resources.filter(r => r.parentId === parentId).sort((a, b) => (b.isFolder ? 1 : 0) - (a.isFolder ? 1 : 0)); return nodes.map(node => { const isExpanded = expandedFolders.includes(node.id); const isSelected = currentFolderId === node.id; return ( <div key={node.id}> <div className={`flex items-center px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${isSelected && node.isFolder ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600' : ''}`} style={{ paddingLeft: `${level * 16 + 8}px` }} onClick={() => { if (node.isFolder) { setCurrentFolderId(node.id); if (!isExpanded) toggleFolder(node.id); } }}> {node.isFolder && <div onClick={(e) => { e.stopPropagation(); toggleFolder(node.id); }} className="p-1 mr-1 hover:bg-gray-200 rounded">{isExpanded ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}</div>} {node.isFolder ? (isExpanded ? <FolderOpen size={16} className="text-yellow-500 mr-2"/> : <Folder size={16} className="text-yellow-500 mr-2"/>) : <FileText size={16} className="text-blue-400 mr-2"/>} <span className="text-sm truncate flex-1">{node.title}</span> {!node.isFolder && <button onClick={(e) => { e.stopPropagation(); setPreviewFile(node); }} className="p-1 text-gray-400 hover:text-blue-500"><Eye size={14}/></button>} <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14}/></button> </div> {node.isFolder && isExpanded && renderFileTree(node.id, level + 1)} </div> ); }); };
+
   const handleSend = async () => { if (!currentAssistant) return addToast('error', "请先选择助手"); if ((!input.trim() && attachedImages.length === 0)) return; const text = input; setInput(''); setIsProcessing(true); setCurrentEmotion('thinking'); const userMsg: Message = { id: generateId(), role: 'user', content: text, timestamp: Date.now() }; setChatHistory(prev => [...prev, userMsg]); setVisibleMsgCount(prev => prev + 1); try { let memContext = ""; let resContext = ""; if (user) { if (currentAssistant.memoryFolderId) { const memFiles = getFolderFiles(currentAssistant.memoryFolderId); const coreMem = memFiles.find(f => f.title === "核心记忆.txt"); if (coreMem) memContext = coreMem.content || ""; } let relatedFiles: FileNode[] = []; currentAssistant.linkedFolderIds?.forEach(fid => relatedFiles = [...relatedFiles, ...getFolderFiles(fid)]); if (currentAssistant.linkedResourceIds) { const linked = resources.filter(r => currentAssistant.linkedResourceIds?.includes(r.id) && !r.isFolder); relatedFiles = [...relatedFiles, ...linked]; } const mentions = resources.filter(r => !r.isFolder && text.includes(`@${r.title}`)); const finalFiles = [...new Set([...relatedFiles, ...mentions])]; resContext = finalFiles.map(f => `\n<document title="${f.title}">\n${f.content?.slice(0, 30000) || "(空)"}\n</document>\n`).join(''); } const history = chatHistory.slice(-10); const { text: response } = await callLLM(currentAssistant, text, history, memContext, resContext, user?.name || "主人"); const { thought, cleanText, parts, actualResponse } = await processResponse(response); const aiMsg: Message = { id: generateId(), role: 'assistant', content: cleanText, thought: thought, rawContent: actualResponse, timestamp: Date.now() }; await playSequence(parts); setChatHistory(prev => [...prev, aiMsg]); setVisibleMsgCount(prev => prev + 1); if (user && currentAssistant.memoryFolderId) { const memFolderId = currentAssistant.memoryFolderId; const memFileName = "核心记忆.txt"; const existingFiles = getFolderFiles(memFolderId); let targetFile = existingFiles.find(f => f.title === memFileName); const timeShort = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'}); const newLog = `\n[${getIsoDate(Date.now())} ${timeShort}] 主人: ${text} | 小叽: ${cleanText}`; if (!targetFile) { targetFile = { id: generateId(), parentId: memFolderId, title: memFileName, isFolder: false, content: "", type: 'knowledge', updatedAt: Date.now(), size: 0 }; await db.set(STORES.RESOURCES, targetFile.id, targetFile); setResources(prev => [...prev, targetFile!]); } if (targetFile) { const updatedFile = { ...targetFile, content: (targetFile.content || "") + newLog, updatedAt: Date.now(), size: (targetFile.content?.length || 0) + newLog.length }; await db.set(STORES.RESOURCES, targetFile.id, updatedFile); setResources(prev => prev.map(r => r.id === targetFile!.id ? updatedFile : r)); addToast('success', "已记入核心记忆"); } } } catch (e) { setCurrentEmotion('sad'); setChatHistory(prev => [...prev, { id: generateId(), role: 'system', content: `Error: ${(e as Error).message}`, timestamp: Date.now() }]); } finally { setIsProcessing(false); } };
 
-  const insertMention = (t: string) => { setInput(p => `${p} @${t} `); setShowMentionModal(false); textareaRef.current?.focus(); };
+    // insertMention removed (unused)
   
   return (
     <div className={`flex h-screen font-sans ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-slate-50 text-slate-800'} overflow-hidden relative`}>
         <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none"> {toasts.map(t => ( <div key={t.id} className={`pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-fade-in flex items-center gap-2 ${t.type==='success'?'bg-green-500 text-white':t.type==='error'?'bg-red-500 text-white':'bg-gray-800 text-white'}`}> {t.type==='success'?<CheckCircle size={16}/>:t.type==='error'?<AlertCircle size={16}/>:<Info size={16}/>} {t.content} </div> ))} </div>
-        {showLogin && ( <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 text-white animate-fade-in"> <div className="bg-gray-900 p-8 rounded-2xl w-full max-w-md border border-gray-700 shadow-2xl relative"> <button onClick={() => setShowLogin(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24}/></button> <h1 className="text-2xl font-bold text-center mb-6">AI Nexus V16.24</h1> <div className="space-y-4"> {isRegistering && <input className="w-full p-3 rounded bg-black/50 border border-gray-700" placeholder="昵称" value={authForm.name} onChange={e=>setAuthForm({...authForm, name:e.target.value})}/>} <input className="w-full p-3 rounded bg-black/50 border border-gray-700" placeholder="邮箱" value={authForm.email} onChange={e=>setAuthForm({...authForm, email:e.target.value})}/> <input className="w-full p-3 rounded bg-black/50 border border-gray-700" type="password" placeholder="密码" value={authForm.pass} onChange={e=>setAuthForm({...authForm, pass:e.target.value})}/> {authError && <p className="text-red-400 text-sm">{authError}</p>} <button className="w-full bg-indigo-600 p-3 rounded font-bold hover:bg-indigo-700 transition-colors" onClick={handleLogin}>{isRegistering?'注册':'登录'}</button> <div className="text-center text-sm text-gray-400 cursor-pointer hover:text-white" onClick={()=>setIsRegistering(!isRegistering)}>{isRegistering?'返回登录':'注册账号'}</div> </div> </div> </div> )}
+        {showLogin && ( <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 text-white animate-fade-in"> <div className="bg-gray-900 p-8 rounded-2xl w-full max-w-md border border-gray-700 shadow-2xl relative"> <button onClick={() => setShowLogin(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24}/></button> <h1 className="text-2xl font-bold text-center mb-6">AI Nexus V16.24</h1> <div className="space-y-4"> {isRegistering && <input className="w-full p-3 rounded bg-black/50 border border-gray-700" placeholder="昵称" value={authForm.name} onChange={e=>setAuthForm({...authForm, name:e.target.value})}/>} <input className="w-full p-3 rounded bg-black/50 border border-gray-700" placeholder="邮箱" value={authForm.email} onChange={e=>setAuthForm({...authForm, email:e.target.value})}/> <input className="w-full p-3 rounded bg-black/50 border border-gray-700" type="password" placeholder="密码" value={authForm.pass} onChange={e=>setAuthForm({...authForm, pass:e.target.value})}/> {authError && <p className="text-red-400 text-sm">{authError}</p>} <button onClick={handleLogin} className="w-full bg-indigo-600 p-3 rounded font-bold hover:bg-indigo-700 transition-colors">{isRegistering?'注册':'登录'}</button> <div className="text-center text-sm text-gray-400 cursor-pointer hover:text-white" onClick={()=>setIsRegistering(!isRegistering)}>{isRegistering?'返回登录':'注册账号'}</div> </div> </div> </div> )}
         
         <div className="flex-1 flex flex-col h-full relative min-w-0 overflow-hidden">
             <header className={`h-16 border-b flex items-center justify-between px-4 shrink-0 z-30 ${isDarkMode?'bg-gray-900 border-gray-700':'bg-white border-gray-200'}`}>
@@ -607,7 +558,7 @@ function AppContent() {
             </header>
             <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4 min-h-0">
                 {hasMoreMessages && ( <div className="flex justify-center mb-4"> <button onClick={() => setVisibleMsgCount(prev => prev + 3)} className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm"> <ChevronUp size={14} /> 查看更多历史消息 </button> </div> )}
-                <div className="max-w-4xl mx-auto w-full space-y-4"> {displayMessages.map(msg => ( <ChatMessage key={msg.id} msg={msg} speak={speak} isMuted={isMuted} /> ))} {isStreaming && ( <div className="flex w-full justify-start animate-slide-up"> <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-sm ${isDarkMode?'bg-gray-800':'bg-white border'}`}> <div className="whitespace-pre-wrap font-medium text-lg tracking-wide">{streamingContent}</div> </div> </div> )} {isProcessing && !isStreaming && ( <div className="flex justify-start"> <ThinkingCharacter text="正在思考..." /> </div> )} <div ref={messagesEndRef}/> </div>
+                <div className="max-w-4xl mx-auto w-full space-y-4"> {displayMessages.map(msg => ( <ChatMessage key={msg.id} msg={msg} speak={speak} /> ))} {isStreaming && ( <div className="flex w-full justify-start animate-slide-up"> <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-sm ${isDarkMode?'bg-gray-800':'bg-white border'}`}> <div className="whitespace-pre-wrap font-medium text-lg tracking-wide">{streamingContent}</div> </div> </div> )} {isProcessing && !isStreaming && ( <div className="flex justify-start"> <ThinkingCharacter text="正在思考..." /> </div> )} <div ref={messagesEndRef}/> </div>
             </div>
             <div className={`p-3 border-t shrink-0 z-20 w-full ${isDarkMode?'bg-gray-900 border-gray-700':'bg-white border-gray-200'}`}> <div className="flex gap-2 items-end max-w-4xl mx-auto w-full"> <div className="flex-1 flex gap-2 items-end w-full"> <div className="flex flex-col gap-1 shrink-0 pb-1"> <button onClick={() => setIsMuted(!isMuted)} className={`p-2 hover:bg-gray-100 rounded ${isMuted?'text-red-500':'text-gray-500'}`}>{isMuted ? <VolumeX size={20}/> : <Volume2 size={20}/>}</button> <button onClick={toggleListen} className={`p-2 hover:bg-gray-100 rounded ${isListening?'text-red-500 animate-pulse':'text-gray-500'}`}><Mic size={20}/></button> <button onClick={()=>{setShowMentionModal(true);setMentionSearch('');}} className="p-2 hover:bg-gray-100 rounded text-blue-600"><AtSign size={20}/></button> </div> <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}} className={`flex-1 bg-transparent border rounded-lg px-3 py-2 outline-none text-base w-full ${isDarkMode?'border-gray-600':'border-gray-300'}`} placeholder={currentAssistant ? (user ? "输入消息..." : "访客模式...") : "请选助手"} rows={1} style={{minHeight: '44px', maxHeight:'120px'}} /> <button onClick={handleSend} disabled={isProcessing} className="p-3 bg-indigo-600 text-white rounded-lg disabled:opacity-50 shrink-0 h-[44px] w-[44px] flex items-center justify-center"><Send size={18}/></button> </div> </div> </div>
         </div>
