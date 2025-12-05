@@ -334,6 +334,9 @@ function AppContent() {
   const currentAssistant = assistants.length > 0 ? assistants[0] : null;
   const currentSessionId = 'global_session';
 
+    const PUSH_SERVER = (((import.meta as any).env && (import.meta as any).env.VITE_PUSH_SERVER) || 'http://localhost:3000').replace(/\/$/, '');
+    const [proactiveEnabled, setProactiveEnabled] = useState<boolean>(() => !!localStorage.getItem('chobits_proactive'));
+
   const displayMessages = chatHistory.slice(-visibleMsgCount);
   const hasMoreMessages = chatHistory.length > visibleMsgCount;
 
@@ -357,6 +360,55 @@ function AppContent() {
           synthRef.current.speak(u); 
       } 
   }, [isMuted]);
+
+    // Push registration (Capacitor). Uses dynamic import so web builds don't break.
+    const registerForPush = useCallback(async () => {
+        try {
+            // dynamic import - avoid bundler resolving this module in web build
+            // @ts-ignore
+            const mod = await eval("import('@capacitor/push-notifications')");
+            const PushNotifications: any = (mod as any).PushNotifications;
+            const p = await PushNotifications.requestPermissions();
+            if (p.receive !== 'granted') { addToast('error', '推送权限被拒绝'); return; }
+            await PushNotifications.register();
+
+            PushNotifications.addListener('registration', (token: any) => {
+                try {
+                    localStorage.setItem('chobits_push_token', token.value);
+                    fetch(`${PUSH_SERVER}/register-token`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token: token.value }) }).catch(()=>{});
+                    addToast('success', '推送已注册');
+                } catch (e) { console.warn(e); }
+            });
+
+            PushNotifications.addListener('pushNotificationReceived', (notification: any) => {
+                // When app is foregrounded and receives push, append to chat
+                const title = notification.title || '通知';
+                const body = notification.body || '';
+                setChatHistory(prev => [...prev, { id: generateId(), role: 'assistant', content: `${title}\n${body}`, timestamp: Date.now() }]);
+            });
+
+            PushNotifications.addListener('pushNotificationActionPerformed', () => {
+                // User tapped notification - bring to app
+                window.focus();
+                addToast('info', '打开通知');
+            });
+        } catch (e) {
+            console.warn('Push registration failed', e);
+            addToast('error', '推送初始化失败');
+        }
+    }, [PUSH_SERVER, addToast]);
+
+    useEffect(() => {
+        // When proactive is enabled, attempt to register for push
+        if (proactiveEnabled) {
+            registerForPush();
+            localStorage.setItem('chobits_proactive', '1');
+        } else {
+            localStorage.removeItem('chobits_proactive');
+            const token = localStorage.getItem('chobits_push_token');
+            if (token) { fetch(`${PUSH_SERVER}/unregister-token`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) }).catch(()=>{}); localStorage.removeItem('chobits_push_token'); }
+        }
+    }, [proactiveEnabled, registerForPush]);
 
   const toggleListen = useCallback(() => {
     if (!recognitionRef.current) {
@@ -552,7 +604,9 @@ function AppContent() {
                     <div className="flex flex-col min-w-0 justify-center"> <div className="font-bold flex items-center gap-2 truncate text-lg md:text-xl">{currentAssistant?.name || "AI Nexus"}</div> </div> 
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                    <div className="flex gap-1 mr-1"> {user?.isAdmin && <button onClick={()=>setShowResourcePanel(true)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500" title="资源库"><Database size={18}/></button>} <button onClick={openSettings} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500"><Settings size={18}/></button> </div>
+                    <div className="flex gap-1 mr-1"> {user?.isAdmin && <button onClick={()=>setShowResourcePanel(true)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500" title="资源库"><Database size={18}/></button>} <button onClick={openSettings} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500"><Settings size={18}/></button>
+                        <button title="助手主动通知" onClick={() => setProactiveEnabled(p => { const newV = !p; if (newV) registerForPush().catch(()=>{}); else { const token = localStorage.getItem('chobits_push_token'); if (token) fetch(`${PUSH_SERVER}/unregister-token`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) }).catch(()=>{}); localStorage.removeItem('chobits_push_token'); } localStorage.setItem('chobits_proactive', newV ? '1' : ''); return newV; })} className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-${proactiveEnabled ? 'green' : 'gray'}-500`}>{proactiveEnabled ? '主动: 开' : '主动: 关'}</button>
+                    </div>
                     {user ? ( <button onClick={handleLogout} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-red-500" title="退出登录"><LogOut size={18}/></button> ) : ( <button onClick={() => setShowLogin(true)} className="flex items-center gap-2 px-3 py-1.5 md:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs md:text-sm font-bold shadow-sm transition-colors shrink-0"> <LogIn size={16}/> <span className="hidden md:inline">登录</span> </button> )}
                 </div>
             </header>
