@@ -31,7 +31,7 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
 // --- 1. IndexedDB ---
 const DB_NAME = 'AI_Nexus_DB_V6';
 const DB_VERSION = 1;
-const STORES = { CONFIG: 'config', CHATS: 'chats', RESOURCES: 'resources', MEMORIES: 'memories' };
+const STORES = { CONFIG: 'config', CHATS: 'chats', RESOURCES: 'resources', MEMORIES: 'memories', NOTIFICATIONS: 'notifications' };
 class LocalDB {
   private db: IDBDatabase | null = null;
   async init(): Promise<void> {
@@ -47,6 +47,9 @@ class LocalDB {
   async set(store: string, key: string, val: any): Promise<void> { return new Promise((res, rej) => { const req = this.getStore(store, 'readwrite').put(val, key); req.onsuccess = () => res(); req.onerror = () => rej(req.error); }); }
   async getAll(store: string): Promise<any[]> { return new Promise((res, rej) => { const req = this.getStore(store).getAll(); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); }
   async delete(store: string, key: string): Promise<void> { return new Promise((res, rej) => { const req = this.getStore(store, 'readwrite').delete(key); req.onsuccess = () => res(); req.onerror = () => rej(req.error); }); }
+  async addNotification(notif: ProactiveNotification): Promise<void> { return this.set(STORES.NOTIFICATIONS, notif.id, notif); }
+  async getAllNotifications(): Promise<ProactiveNotification[]> { return this.getAll(STORES.NOTIFICATIONS); }
+  async markNotificationRead(id: string): Promise<void> { const n = await this.get(STORES.NOTIFICATIONS, id); if (n) { n.read = true; await this.set(STORES.NOTIFICATIONS, id, n); } }
   async exportAll() {
       const config = await this.get(STORES.CONFIG, 'app_state') || {};
       const resources = await this.getAll(STORES.RESOURCES);
@@ -87,6 +90,7 @@ interface Message {
 }
 // DailyMemory removed (unused)
 interface ToastMsg { id: string; type: 'success' | 'error' | 'info'; content: string; }
+interface ProactiveNotification { id: string; type: string; title: string; body: string; timestamp: number; read: boolean; memory?: string; }
 
 // --- 3. 辅助函数 ---
 const generateId = () => Math.random().toString(36).substr(2, 9) + Date.now().toString(36); 
@@ -336,6 +340,7 @@ function AppContent() {
 
     const PUSH_SERVER = (((import.meta as any).env && (import.meta as any).env.VITE_PUSH_SERVER) || 'http://localhost:3000').replace(/\/$/, '');
     const [proactiveEnabled, setProactiveEnabled] = useState<boolean>(() => !!localStorage.getItem('chobits_proactive'));
+    const [, setSyncedNotifications] = useState<ProactiveNotification[]>([]);
 
   const displayMessages = chatHistory.slice(-visibleMsgCount);
   const hasMoreMessages = chatHistory.length > visibleMsgCount;
@@ -360,6 +365,24 @@ function AppContent() {
           synthRef.current.speak(u); 
       } 
   }, [isMuted]);
+
+  // Sync pending notifications from server (web + mobile shared queue)
+  const syncPendingNotifications = useCallback(async () => {
+    try {
+      const resp = await fetch(`${PUSH_SERVER}/pending-notifications`).catch(()=>null);
+      if (!resp || !resp.ok) return;
+      const data = await resp.json();
+      const notifications = data.notifications || [];
+      for (const notif of notifications) {
+        if (!notif.read) {
+          await db.addNotification(notif);
+          setSyncedNotifications(prev => [...prev.filter(n => n.id !== notif.id), notif]);
+          // Auto-add unread notification to chat
+          setChatHistory(prev => [...prev, { id: generateId(), role: 'assistant', content: notif.body, timestamp: notif.timestamp }]);
+        }
+      }
+    } catch (e) { console.warn('Sync error:', e); }
+  }, [PUSH_SERVER]);
 
     // Push registration (Capacitor). Uses dynamic import so web builds don't break.
     const registerForPush = useCallback(async () => {
@@ -568,6 +591,7 @@ function AppContent() {
   useEffect(() => { if (isDBReady && isLoaded) db.set(STORES.CHATS, 'global_chat', chatHistory); }, [chatHistory, isDBReady, isLoaded]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatHistory, isProcessing, streamingContent]);
   useEffect(() => { setVisibleMsgCount(3); }, [currentSessionId]);
+  useEffect(() => { if (isDBReady && isLoaded) { syncPendingNotifications(); const syncInterval = setInterval(() => syncPendingNotifications(), 60000); return () => clearInterval(syncInterval); } }, [isDBReady, isLoaded, syncPendingNotifications]);
 
   // [4] Handlers and Logic (Defined after state, before return)
   const handleLogin = (e: React.FormEvent) => { e.preventDefault(); setAuthError(''); const { email, pass, name } = authForm; if (isRegistering) { if (!email || !pass || !name) { setAuthError('请填写完整'); return; } if (email === ADMIN_CREDENTIALS.email) { setAuthError('此邮箱已被系统保留'); return; } if (registeredUsers.find(u => u.email === email)) { setAuthError('该邮箱已被注册'); return; } const newUser: UserProfile = { email, name, isAdmin: false, password: pass }; setRegisteredUsers(prev => [...prev, newUser]); setUser(newUser); setShowLogin(false); } else { if (email === ADMIN_CREDENTIALS.email && pass === ADMIN_CREDENTIALS.pass) { setUser({ ...ADMIN_CREDENTIALS, isAdmin: true }); setShowLogin(false); } else { const found = registeredUsers.find(u => u.email === email && u.password === pass); if (found) { setUser(found); setShowLogin(false); } else { setAuthError('错误'); } } } };
